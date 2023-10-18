@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 COMMAND=$1
 
 BASE=$(cd `dirname $0` && pwd)
@@ -46,6 +45,12 @@ then
 
     echo Launching ROSCon2023 Demo Simulation
 
+    cd $BASE/ros2_ws
+
+    source install/setup.bash
+
+    cd $BASE
+
     $BASE/Project/build/linux/bin/profile/./ROSCon2023Demo.GameLauncher -bg_ConnectToAssetProcessor=0 > /dev/null
     exit $?
 
@@ -66,7 +71,14 @@ then
 
     echo Launching Editor for ROSCon2023 Demo
 
+    cd $BASE/ros2_ws
+
+    source install/setup.bash
+
+    cd $BASE
+
     $BASE/Project/build/linux/bin/profile/Editor > /dev/null
+
     exit $?
 elif [ "$COMMAND" = "build" ]
 then
