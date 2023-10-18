@@ -75,6 +75,8 @@ then
 
     colcon build --symlink-install
 
+    source install/setup.bash
+
     cd $BASE
     
     cmake -B $BASE/Project/build/linux -G "Ninja Multi-Config" -S $BASE/Project -DLY_DISABLE_TEST_MODULES=ON -DLY_STRIP_DEBUG_SYMBOLS=ON -DAZ_USE_PHYSX5=ON
