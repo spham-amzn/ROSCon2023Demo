@@ -1,13 +1,14 @@
 #!/bin/bash
 
+
 COMMAND=$1
-ROBOT=$2
-BASE=/home/o3de/github/ROSCon2023Demo
+
+BASE=$(cd `dirname $0` && pwd)
 
 if [ "$COMMAND" = "" ]
 then
     echo "ROSConDemo2023 Script usage:"
-    echo "./demo.sh [COMMAND] [ROBOT]"
+    echo "./demo.sh [COMMAND]"
     echo
     echo "COMMAND (launch|spawn|rviz|editor|build)"
     echo
@@ -23,10 +24,12 @@ then
     exit 0
 fi
 
-echo Command $COMMAND
-echo Robot $ROBOT
+echo Running Command $COMMAND
 
 source /opt/ros/humble/setup.bash
+
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
 
 if [ "$COMMAND" = "launch" ]
 then
