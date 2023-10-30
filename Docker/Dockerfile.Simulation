@@ -15,7 +15,7 @@ WORKDIR $WORKSPACE
 
 # O3DE Variables
 ARG O3DE_REPO=https://github.com/o3de/o3de.git
-ARG O3DE_BRANCH=main
+ARG O3DE_BRANCH=point-release/23101
 ARG O3DE_COMMIT=HEAD
 ENV O3DE_ROOT=$WORKSPACE/o3de
 
@@ -26,16 +26,16 @@ ARG O3DE_EXTRAS_COMMIT=HEAD
 ENV O3DE_EXTRAS_ROOT=$WORKSPACE/o3de-extras
 
 # ROSConDemo Variables
-ARG ROSCON_DEMO_REPO=https://github.com/o3de/ROSConDemo.git
+ARG ROSCON_DEMO_REPO=https://github.com/o3de/ROSCon2023Demo.git
 ARG ROSCON_DEMO_BRANCH=development
 ARG ROSCON_DEMO_COMMIT=HEAD
-ENV ROSCON_DEMO_ROOT=$WORKSPACE/ROSConDemo
+ENV ROSCON_DEMO_ROOT=$WORKSPACE/ROSCon2023Demo
 ENV ROSCON_DEMO_PROJECT=$ROSCON_DEMO_ROOT/Project
 ENV ROSCON_DEMO_NAV_ROOT=$WORKSPACE/ros2_nav
 ENV ROSCON_DEMO_SEEDLIST=$ROSCON_DEMO_ROOT/Project/AssetBundling/SeedLists/DemoLevel1.seed
 
 # Copy the release-patch in case its needed
-COPY o3de_2.1.0.patch $WORKSPACE/
+COPY enable_physx5_linux.patch $WORKSPACE/
 
 ENV LANG=en_US.UTF-8
 
@@ -68,9 +68,11 @@ RUN apt-get update \
             libxcb-xinput-dev \
             libxcb-xinput0 \
             libpcre2-16-0 \
+            libunwind-dev \
             ninja-build \
             python3-pip \
-            software-properties-common \
+            software-properties-common 
+RUN apt-get install -y \
             ros-${ROS_DISTRO}-ackermann-msgs \
             ros-${ROS_DISTRO}-control-toolbox \
             ros-${ROS_DISTRO}-nav-msgs \
@@ -88,11 +90,13 @@ RUN apt-get update \
             ros-${ROS_DISTRO}-controller-manager \
             ros-${ROS_DISTRO}-ur-client-library \
             ros-${ROS_DISTRO}-nav2-common \
+            ros-${ROS_DISTRO}-ur-description \
+            ros-${ROS_DISTRO}-force-torque-sensor-broadcaster \
             python3-vcstool \
             python3-rosdep2 \
-            python3-colcon-common-extensions \
-            && rm -rf /var/lib/apt/lists/* \
-            && pip install python-statemachine
+            python3-colcon-common-extensions
+
+RUN pip install python-statemachine
 
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
@@ -105,11 +109,7 @@ RUN . /opt/ros/${ROS_DISTRO}/setup.sh \
     && git -C $O3DE_ROOT lfs install \
     && git -C $O3DE_ROOT lfs pull \
     && git -C $O3DE_ROOT reset --hard $O3DE_COMMIT \
-    \
-    ############################################################### \
-    # Apply a patch to fix a release compile issue if needed \
-    ############################################################### \
-    && if [ "$(md5sum $O3DE_ROOT/Gems/Atom/RPI/Code/Source/RPI.Public/RPISystem.cpp | awk '{print $1}')" = "07389c00378a13f31f1d6faf097a026b" ];then git -C $O3DE_ROOT apply $WORKSPACE/o3de_2.1.0.patch; fi 
+    && git -C $O3DE_ROOT apply $WORKSPACE/enable_physx5_linux.patch
     
     ############################################################### \
     # Clone o3de-extras   \
@@ -124,28 +124,43 @@ RUN git clone --single-branch -b $O3DE_EXTRAS_BRANCH $O3DE_EXTRAS_REPO $O3DE_EXT
     ###############################################################
 RUN git clone --single-branch -b $ROSCON_DEMO_BRANCH $ROSCON_DEMO_REPO $ROSCON_DEMO_ROOT \
     && git -C $ROSCON_DEMO_ROOT lfs install \
-    && git -C $ROSCON_DEMO_ROOT lfs pull \
-    && git -C $ROSCON_DEMO_ROOT reset --hard $ROSCON_DEMO_COMMIT \
-    && cp -r $ROSCON_DEMO_ROOT/ros2_nav $ROSCON_DEMO_NAV_ROOT 
+    && git -C $ROSCON_DEMO_ROOT reset --hard $ROSCON_DEMO_COMMIT
 
-RUN cd $ROSCON_DEMO_NAV_ROOT \
-    && git submodule init \
-    && git submodule update \
+    ############################################################### \
+    # Clone the ROSConDemo \
+    ###############################################################
+RUN . /opt/ros/${ROS_DISTRO}/setup.sh \
+    && cd $ROSCON_DEMO_ROOT/ros2_ws \
+    && ./setup_submodules.bash \
     && rosdep update \
     && rosdep install --ignore-src --from-paths src/Universal_Robots_ROS2_Driver -y \
-    && colcon build --symlink-install \
-    && source install/setup.bash
+    && colcon build --symlink-install
 
-    ############################################################### \
+    ############################################################### \ 
     # Get the O3DE python and register the gem paths and projects \
     ############################################################### \
-RUN $WORKSPACE/o3de/python/get_python.sh \
-    && $WORKSPACE/o3de/scripts/o3de.sh register -ep $O3DE_ROOT \
+RUN $WORKSPACE/o3de/python/get_python.sh 
+
+RUN $WORKSPACE/o3de/scripts/o3de.sh register -ep $O3DE_ROOT \
     && $WORKSPACE/o3de/scripts/o3de.sh register -gp $O3DE_EXTRAS_ROOT/Gems/ROS2 \
-    && $WORKSPACE/o3de/scripts/o3de.sh register -pp $ROSCON_DEMO_PROJECT \
+    && $WORKSPACE/o3de/scripts/o3de.sh register -gp $O3DE_EXTRAS_ROOT/Gems/ProteusRobot \
+    && $WORKSPACE/o3de/scripts/o3de.sh register -gp $O3DE_EXTRAS_ROOT/Gems/WarehouseAssets \
+    && $WORKSPACE/o3de/scripts/o3de.sh register -gp $O3DE_EXTRAS_ROOT/Gems/WarehouseAutomation \
+    && $WORKSPACE/o3de/scripts/o3de.sh register -pp $ROSCON_DEMO_PROJECT
+
     \
     # Run the project exporter to generate the ROSConDemo release package \
     \
+RUN . /opt/ros/${ROS_DISTRO}/setup.sh \
+    && . /$ROSCON_DEMO_ROOT/ros2_ws/install/setup.sh \
+    && cmake -B $ROSCON_DEMO_PROJECT/build/tools -S $ROSCON_DEMO_PROJECT -G 'Ninja Multi-Config' -DLY_DISABLE_TEST_MODULES=ON -DLY_STRIP_DEBUG_SYMBOLS=ON -DAZ_USE_PHYSX5=ON
+
+RUN . /opt/ros/${ROS_DISTRO}/setup.sh \
+    && . /$ROSCON_DEMO_ROOT/ros2_ws/install/setup.sh \
+    && cmake -B $ROSCON_DEMO_PROJECT/build/launcher -S /data/workspace/ROSCon2023Demo/Project -G 'Ninja Multi-Config' -DLY_DISABLE_TEST_MODULES=ON -DLY_STRIP_DEBUG_SYMBOLS=ON -DAZ_USE_PHYSX5=ON -DLY_MONOLITHIC_GAME=1 -DALLOW_SETTINGS_REGISTRY_DEVELOPMENT_OVERRIDES=0
+
+RUN . /opt/ros/${ROS_DISTRO}/setup.sh \
+    && . /$ROSCON_DEMO_ROOT/ros2_ws/install/setup.sh \
     && $O3DE_ROOT/scripts/o3de.sh export-project -es ExportScripts/export_source_built_project.py \
                                     --project-path $ROSCON_DEMO_PROJECT \
                                     --log-level INFO \
@@ -156,17 +171,13 @@ RUN $WORKSPACE/o3de/python/get_python.sh \
                                     --seedlist $ROSCON_DEMO_SEEDLIST \
                                     -noserver \
                                     -nounified \
-                                    -out $WORKSPACE \
-    && rm -rf $ROSCON_DEMO_ROOT \
-    && rm -rf $O3DE_EXTRAS_ROOT \
+                                    -out $WORKSPACE 
+
+RUN rm -rf $O3DE_EXTRAS_ROOT \
     && rm -rf $WORKSPACE/o3de-extras \
+    && rm -rf $ROSCON_DEMO_PROJECT \
     && rm -rf /root/.o3de \
     && rm -rf /root/O3DE
-
-# Build the navigation stack
-RUN . /opt/ros/${ROS_DISTRO}/setup.sh \
-    && cd $ROSCON_DEMO_NAV_ROOT \
-    && colcon build --symlink-install
 
 # Add the appropriate ros2 environment setup script to the system startup
 RUN echo "[Unit]" > /etc/systemd/system/setup_ros.service \
@@ -187,3 +198,4 @@ RUN echo "[Unit]" > /etc/systemd/system/setup_ros.service \
 
 ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES all
+
